@@ -1,0 +1,490 @@
+---
+title: "Clasification Analysis pada Dataset Dry Bean Menggunakan Metode Analisis Diskriminan dan Multinomial Logistic Regression"
+author: "Andika Febrianto (24031554018), Dian Rohmatul Islam (24031554047), Afifah (24031554202)"
+date: "2026-04-28"
+output: html_document
+---
+
+
+#Data Understanding
+
+Analisis klasifikasi ini bertujuan untuk mengklasifikasikan jenis biji kering berdasarkan Dry Bean Dataset dari UCI Machine Learning Repository menggunakan metode regresi logistik multinomial. Dataset yang digunakan terdiri dari 13.611 observasi yang merepresentasikan tujuh kategori jenis biji kering, yaitu BARBUNYA, BOMBAY, CALI, DERMASON, HOROZ, SEKER, dan SIRA, dengan karakteristik yang diukur berdasarkan fitur geometris biji. Variabel dependen dalam analisis ini adalah jenis biji (Class), sedangkan variabel independen yang digunakan merupakan hasil seleksi variabel, yaitu AspectRatio, ShapeFactor1, ShapeFactor4, Extent, dan Solidity, yang dipilih untuk merepresentasikan bentuk biji sekaligus mengurangi masalah multikolinearitas. Data diproses melalui tahap preprocessing yang meliputi pengecekan missing value, penghapusan data duplikat, standarisasi variabel numerik, serta identifikasi outlier untuk memastikan kualitas data sebelum pemodelan. Model awal dibentuk menggunakan seluruh variabel prediktor, kemudian dilakukan evaluasi asumsi seperti independensi observasi, multikolinearitas, dan linearitas logit untuk memperoleh model yang lebih stabil dan parsimonious. Hasil pengujian menunjukkan bahwa model akhir dengan penambahan komponen non-linear mampu memberikan performa klasifikasi yang sangat baik, dengan akurasi sebesar 92,24%, nilai Kappa sebesar 0,9061, dan nilai Pseudo R² McFadden sebesar 0,885. Hasil analisis menunjukkan bahwa regresi logistik multinomial mampu mengklasifikasikan jenis dry bean secara akurat berdasarkan karakteristik geometris biji, sehingga metode ini efektif digunakan sebagai model klasifikasi multikelas.
+
+
+# Import Data from UCI Repo
+```{r}
+url <- "https://archive.ics.uci.edu/static/public/602/data.csv"
+data <- read.csv(url, header = TRUE)
+data
+```
+
+
+#Struktur Data
+```{r}
+attributes <- data
+str(attributes)
+```
+```{r}
+names(data)
+```
+```{r}
+summary(data)
+```
+Berdasarkan hasil statistika deskriptif awal, Dry Bean Dataset terdiri dari 13.611 observasi dengan 16 variabel numerik dan 1 variabel kategorik, yaitu variable Class sebagai jenis kacang. Variabel ukuran utama seperti Area, Perimeter, MajorAxisLength, dan MinorAxisLength memiliki rentang nilai yang lebar, menunjukkan adanya perbedaan ukuran biji yang cukup jelas antar observasi. Selain itu, variabel bentuk seperti AspectRatio dan Eccentricity juga menunjukkan bahwa bentuk biji cenderung bervariasi, dari yang relatif bulat hingga lebih lonjong. Hal ini menunjukkan bahwa ukuran dan bentuk merupakan karakteristik utama yang dapat membedakan jenis dry bean. Disisi lain, variabel bentuk lain seperti Solidity, Roundness, dan Compactness memiliki nilai rata-rata yang relatif tinggi, yang menunjukkan bahwa sebagian besar biji memiliki bentuk yang cukup padat dan stabil. 
+
+
+
+
+# Preprocessing Data
+## Cek Missing Value
+```{r}
+colSums(is.na(data))
+```
+Hasil pemeriksaan missing values menunjukkan bahwa seluruh variabel dalam dataset tidak memiliki data yang kosong, yang ditunjukkan oleh nilai nol pada setiap kolom. Hal ini menunjukkan bahwa dataset berada dalam kondisi yang lengkap dan tidak memerlukan proses penanganan missing values, sehingga seluruh observasi dapat langsung digunakan dalam tahap analisis selanjutnya.
+
+## Cek Duplikat
+```{r}
+sum(duplicated(data))
+```
+
+```{r}
+# Hapus duplikat
+data <- data[!duplicated(data), ]
+
+sum(duplicated(data))
+```
+
+```{r}
+any(duplicated(data$id))
+```
+Pemeriksaan terhadap data duplikat menunjukkan bahwa terdapat 68 observasi yang teridentifikasi sebagai duplikasi dalam dataset. Untuk menjaga kualitas dan keakuratan analisis, seluruh data duplikat tersebut dihapus sehingga tidak terjadi bias akibat pengulangan data. Setelah proses cleaning dilakukan, tidak ditemukan lagi observasi yang terduplikasi dalam dataset, yang ditunjukkan dengan nilai nol pada hasil pemeriksaan ulang. Dari proses ini, menunjukkan dataset yang digunakan untuk analisis selanjutnya telah bersih dari duplikasi dan lebih representatif dalam merepresentasikan karakteristik data yang sebenarnya.
+
+## Standarisasi
+```{r}
+# Scaling semua fitur numerik (kecuali target Class)
+x_scaled <- scale(data[, -ncol(data)])
+
+# Gabungkan kembali dengan target
+data_scaled <- data.frame(x_scaled, Class = data$Class)
+
+# Cek hasil
+head(data_scaled)
+summary(data_scaled)
+```
+Pada tahap preprocessing berikutnya, dilakukan proses standarisasi terhadap seluruh variabel numerik menggunakan metode scaling (z-score), dengan tujuan untuk menyamakan skala antar variabel agar tidak terjadi dominasi variabel tertentu dalam proses pemodelan. Proses ini dilakukan dengan mengurangi nilai setiap variabel dengan rata-ratanya dan membaginya dengan standar deviasi, sehingga menghasilkan data dengan rata-rata mendekati nol dan standar deviasi sebesar satu. Variabel dependen (Class) tidak disertakan dalam proses scaling karena bersifat kategorik. Hasil standarisasi menunjukkan bahwa seluruh variabel numerik telah memiliki nilai mean mendekati nol, yang menandakan bahwa proses scaling berhasil dilakukan dengan baik. Perubahan ini bertujuan untuk meningkatkan stabilitas dan performa model regresi logistik multinomial, terutama dalam proses estimasi parameter.
+
+## Cek Outlier
+```{r}
+boxplot(scale(data[, -ncol(data)]), las = 2)
+```
+Visualisasi boxplot terhadap data yang telah distandarisasi menunjukkan adanya outlier pada hampir seluruh variabel numerik, yang ditunjukkan dengan titik-titik di luar batas whisker pada masing-masing boxplot. Outlier terlihat cukup signifikan pada beberapa variabel seperti Area, ConvexArea, Solidity, dan ShapeFactor4, yang memiliki sebaran nilai ekstrem baik ke arah atas maupun bawah. Keberadaan outlier dalam dataset ini masih dapat ditoleransi karena jumlahnya relatif kecil dibandingkan total observasi serta masih merepresentasikan variasi alami karakteristik biji. Selain itu, metode regresi logistik multinomial yang digunakan cenderung cukup robust terhadap outlier, sehingga data tidak dilakukan penghapusan lebih lanjut.
+
+
+# Eksplorasi Data
+```{r}
+str(data_scaled)
+summary(data_scaled)
+```
+Hasil summary(data_scaled) menunjukkan bahwa seluruh variabel numerik telah dilakukan proses standarisasi, yang ditunjukkan dengan nilai rata-rata masing-masing variabel mendekati 0. Selain itu, sebagian besar variabel juga memiliki rentang kuartil yang relatif seimbang di sekitar nol, yang menunjukkan bahwa skala data telah berhasil dinormalisasi dengan baik. Tetapi, beberapa variabel tetap menunjukkan nilai minimum dan maksimum yang cukup ekstrem, seperti pada variable Solidity, Roundness, dan ShapeFactor4. Hal ini menunjukkan bahwa meskipun data telah distandarisasi, masih terdapat beberapa observasi dengan karakteristik yang jauh berbeda dari mayoritas data. 
+
+
+```{r}
+#Distribusi Label
+data_scaled$Class <- as.factor(data_scaled$Class)
+
+levels(data_scaled$Class)
+table(data_scaled$Class)
+prop.table(table(data_scaled$Class))
+```
+Distribusi jumlah data pada masing-masing kelas menunjukkan bahwa kelas DERMASON memiliki jumlah observasi terbanyak, yaitu 3.546 data atau sekitar 26,18% dari total observasi. Sedangkan, kelas BOMBAY memiliki jumlah observasi paling sedikit, yaitu 522 data atau sekitar 3,85%. Kelas lainnya memiliki proporsi yang bervariasi, yaitu SIRA sebesar 19,46%, SEKER sebesar 14,97%, HOROZ sebesar 13,73%, CALI sebesar 12,04%, dan BARBUNYA sebesar 9,76%. Hasil ini menunjukkan bahwa distribusi kelas pada dataset cenderung tidak seimbang, karena terdapat perbedaan proporsi yang cukup jelas antar kategori. 
+
+
+## Korelasi Antar Variabel
+```{r}
+cor_matrix <- cor(data[, -ncol(data)]) #cek korelasi
+cor_matrix
+```
+Berdasarkan matriks korelasi, terlihat bahwa beberapa variabel prediktor memiliki hubungan yang sangat kuat satu sama lain, sehingga mengindikasikan adanya potensi multikolinearitas. Korelasi sangat tinggi terlihat pada pasangan variabel seperti Area dengan ConvexArea (0,9999), Perimeter dengan EquivDiameter (0,9915), AspectRatio dengan Compactness (-0,9876), serta Compactness dengan ShapeFactor3 (0,9987). Nilai korelasi yang mendekati kurang lebih 1 menunjukkan bahwa variabel-variabel tersebut membawa informasi yang sangat mirip, sehingga jika digunakan secara bersamaan dalam model dapat menyebabkan ketidakstabilan estimasi koefisien. Oleh karena itu, tidak semua variabel dimasukkan secara langsung ke dalam model akhir. Seleksi variabel kemudian difokuskan pada prediktor yang memiliki relevansi teoritis terhadap bentuk biji dan tetap mampu merepresentasikan variasi data tanpa menimbulkan redundansi informasi yang berlebihan, seperti AspectRatio, ShapeFactor1, ShapeFactor4, Extent, dan Solidity. Hal ini dilakukan agar model multinomial yang dibuat stabil, interpretatif, dan terhindar dari masalah multikolinearitas yang tinggi.
+
+# Uji Asumsi atau Diagnostik Model Awal Regresi Logistik Multinomial
+## Fit Awal Model
+```{r}
+library(nnet)
+model_awal <- multinom(Class ~ ., data = data_scaled, trace = FALSE, maxit = 1000)
+summary(model_awal)
+```
+Sebagai langkah awal pemodelan, dilakukan estimasi regresi logistik multinomial menggunakan seluruh variabel prediktor untuk membentuk full model. Model awal ini digunakan sebagai tahap diagnostik guna mengevaluasi kestabilan parameter sebelum dilakukan seleksi variabel. Hasil estimasi menunjukkan bahwa beberapa koefisien memiliki nilai yang sangat besar disertai standard error yang juga tinggi, yang menunjukkan adanya ketidakstabilan estimasi parameter. Kondisi ini mengarah pada dugaan multikolinearitas antar prediktor, berdasarkan hasil analisis korelasi sebelumnya yang menunjukkan hubungan sangat kuat di antara beberapa variabel. Meskipun model awal menghasilkan nilai Residual Deviance sebesar 5226,557 dan AIC sebesar 5430,557, kompleksitas model yang tinggi membuat interpretasi menjadi kurang stabil. Oleh karena itu, model awal ini digunakan sebagai dasar untuk melakukan penyederhanaan model melalui seleksi variabel agar diperoleh model multinomial yang lebih stabil, dan mudah diinterpretasikan.
+
+##Pemeriksaan Konvergensi Model
+```{r}
+model_awal$convergence #harus 0 untuk menunjukkan konvergen
+```
+Pemeriksaan konvergensi dilakukan untuk memastikan bahwa proses estimasi parameter pada model multinomial berhasil mencapai solusi optimum. Hasil menunjukkan nilai convergence = 0, yang menandakan bahwa algoritma iteratif pada proses estimasi telah berhasil konvergen. Dengan demikian, model awal secara komputasional berhasil diestimasi dan parameter dapat diperoleh tanpa kegagalan optimasi. Meskipun model telah konvergen, hasil estimasi masih menunjukkan adanya koefisien yang sangat besar dan standard error yang tinggi, sehingga konvergensi secara numerik belum menjamin bahwa model sudah stabil secara statistik. Oleh karena itu, evaluasi lanjutan terhadap multikolinearitas dan penyederhanaan model tetap diperlukan.
+
+## Goodness-of-Fit awal (berdasarkan Log-Likelihood)
+```{r}
+logLik(model_awal) 
+```
+Kecocokan awal model juga dievaluasi menggunakan nilai log-likelihood. Hasil estimasi menunjukkan bahwa model awal memiliki nilai log-likelihood sebesar -2613,278 dengan derajat bebas 102. Nilai ini merepresentasikan tingkat kecocokan model terhadap data, di mana semakin besar nilai log-likelihood (semakin mendekati nol) menunjukkan model yang semakin baik dalam menjelaskan variasi data. Pada model multinomial, nilai log-likelihood digunakan sebagai dasar untuk mengevaluasi performa model secara keseluruhan dan nantinya dibandingkan dengan model yang lebih sederhana melalui uji likelihood ratio. Meskipun model awal menunjukkan kecocokan yang cukup baik, jumlah parameter yang besar menunjukkan bahwa model masih terlalu kompleks sehingga perlu dilakukan penyederhanaan agar lebih efisien dan stabil.
+
+# Uji Asumsi Model
+## Independence of Observation
+Uji dependensi berdasarkan data tersebut menunjukkan bahwa setiap observasi dalam dataset bersifat independen, karena masing-masing data merepresentasikan sampel biji kacang yang berbeda dan tidak saling berkaitan. Dengan demikian, asumsi independensi observasi pada regresi logistik multinomial telah terpenuhi.
+
+## Uji Multikolinearitas (VIF)
+```{r}
+#uji multikolinearitas
+library(car)
+model_vif <- lm(as.numeric(Class) ~ ., data = data_scaled)
+vif(model_vif)
+```
+Uji multikolinearitas dilakukan untuk mendeteksi adanya korelasi tinggi antar variabel prediktor yang dapat menyebabkan ketidakstabilan estimasi parameter pada model regresi logistik multinomial. Pengujian dilakukan menggunakan Variance Inflation Factor (VIF), di mana nilai VIF yang melebihi 10 umumnya menunjukkan adanya multikolinearitas yang tinggi Hasil pengujian menunjukkan bahwa sebagian besar variabel memiliki nilai VIF yang sangat tinggi, bahkan mencapai ribuan hingga ratusan ribu, seperti EquivDiameter (317671,6), Compactness (275722,9), ShapeFactor3 (199791,0), MajorAxisLength (88521,1), dan Area (81784,1). Nilai tersebut menunjukkan adanya multikolinearitas yang sangat kuat antar prediktor, yang sejalan dengan hasil matriks korelasi sebelumnya. Kondisi ini menunjukkan bahwa banyak variabel membawa informasi yang redundan, sehingga penggunaan seluruh prediktor secara bersamaan dapat menyebabkan model menjadi tidak stabil dan sulit diinterpretasikan. Oleh karena itu, diperlukan seleksi variabel untuk mengurangi redundansi informasi dan menghasilkan model yang lebih stabil secara statistik.
+
+# Seleksi Variabel / Penyederhanaan Model
+## Pemilihan variabel
+```{r}
+data_final <- data[, c(
+  "AspectRatio",
+  "ShapeFactor1",
+  "ShapeFactor4",
+  "Extent",
+  "Solidity",
+  "Class"
+)]
+data_final
+```
+## Korelasi antar variabel terpilih
+```{r}
+cor_matrix <- cor(data_final[, -ncol(data_final)]) #cek korelasi
+cor_matrix
+```
+Berdasarkan matriks korelasi pada variabel terpilih, terlihat bahwa hubungan antar variabel cenderung berada pada tingkat rendah hingga sedang. Hubungan korelasi tertinggi terdapat antara ShapeFactor4 dan Solidity sebesar 0,700, yang menunjukkan adanya hubungan positif cukup kuat. Artinya, semakin tinggi nilai ShapeFactor4, maka nilai solidity cenderung meningkat. Sedangkan, AspectRatio memiliki korelasi negatif sedang dengan ShapeFactor4 sebesar -0,452 dan dengan Extent sebesar -0,371, yang menunjukkan bahwa semakin lonjong bentuk biji, maka nilai kedua variabel tersebut cenderung menurun.
+Variabel lainnya menunjukkan hubungan yang relatif lemah, seperti AspectRatio dengan ShapeFactor1 sebesar 0,021 serta Extent dengan Solidity sebesar 0,192. Korelasi yang rendah ini menunjukkan bahwa sebagian besar variabel memberikan informasi yang berbeda satu sama lain. Secara keseluruhan, hasil korelasi menunjukkan bahwa variabel terpilih tidak mengalami masalah hubungan linear yang terlalu kuat, sehingga cukup layak digunakan sebagai prediktor dalam analisis klasifikasi.
+
+
+## Standarisasi variabel terpilih
+```{r}
+x_scaled <- scale(data_final[, -ncol(data_final)])
+data_final_scaled <- data.frame(x_scaled, Class = data_final$Class)
+data_final_scaled$Class <- as.factor(data_final_scaled$Class)
+
+summary(data_final_scaled)
+```
+Berdasarkan hasil standarisasi pada variabel terpilih, seluruh variabel numerik yaitu AspectRatio, ShapeFactor1, ShapeFactor4, Extent, dan Solidity telah berhasil ditransformasikan ke dalam skala yang seragam. Hal ini terlihat dari nilai rata-rata masing-masing variabel yang berada di sekitar 0, yang menunjukkan bahwa proses standarisasi telah berjalan dengan baik. Standarisasi dilakukan agar seluruh variabel memiliki skala yang sebanding, sehingga tidak ada variabel yang mendominasi model hanya karena memiliki rentang nilai yang lebih besar. Meskipun telah distandarisasi, beberapa variabel seperti ShapeFactor4 dan Solidity masih menunjukkan nilai minimum yang cukup ekstrem. Hal ini menunjukkan bahwa masih terdapat beberapa observasi yang memiliki karakteristik cukup berbeda dibanding mayoritas data. 
+
+
+# Uji Asumsi Model (subset variabel terpilih)
+## Uji Multikolinearitas 
+```{r}
+model_vif <- lm(as.numeric(Class) ~ ., data = data_final_scaled)
+vif(model_vif)
+```
+Setelah dilakukan seleksi variabel, pengujian multikolinearitas ulang dilakukan untuk memastikan bahwa subset prediktor yang dipilih tidak lagi mengalami masalah korelasi tinggi. Hasil Variance Inflation Factor (VIF) menunjukkan bahwa seluruh variabel memiliki nilai yang rendah, yaitu AspectRatio (1,463), ShapeFactor1 (1,117), ShapeFactor4 (2,467), Extent (1,215), dan Solidity (2,025). Seluruh nilai VIF berada jauh di bawah batas umum 10, bahkan mendekati 1, yang menunjukkan bahwa multikolinearitas pada model hasil seleksi sudah sangat rendah. Hasil ini menunjukkan bahwa proses penyederhanaan model berhasil mengurangi redundansi informasi antar prediktor, sehingga variabel yang digunakan pada model akhir lebih stabil secara statistik dan layak untuk diinterpretasikan.
+
+# Fit Ulang Model
+```{r}
+model_final <- multinom(Class ~ ., data = data_final_scaled, trace = FALSE, maxit = 1000)
+
+model_final$convergence
+summary(model_final)
+```
+Fit ulang Model regresi logistik multinomial  dibuat menggunakan variabel terpilih yaitu AspectRatio, ShapeFactor1, ShapeFactor4, Extent, dan Solidity. Hasil estimasi menunjukkan bahwa model telah konvergen dengan baik (nilai convergence = 0), yang berarti algoritma iteratif Maximum Likelihood Estimation (MLE) berhasil menemukan parameter optimum. Nilai koefisien pada masing-masing kategori (BOMBAY, CALI, DERMASON, HOROZ, SEKER, dan SIRA) merepresentasikan perubahan log-odds relatif terhadap kategori referensi (BARBUNYA). Selain itu, nilai Residual Deviance sebesar 6226.426 dan AIC sebesar 6298.426 menunjukkan bahwa model memiliki kecocokan yang cukup baik dalam menjelaskan variasi data, dengan kompleksitas yang masih terkontrol. Secara umum, variabel-variabel yang digunakan dalam model terbukti mampu membedakan kategori jenis biji berdasarkan karakteristik bentuknya.
+
+
+## Uji Linearitas Logit
+
+```{r}
+# Cek nilai minimum tiap variabel
+sapply(data_final[, -ncol(data_final)], min)
+```
+
+```{r}
+# Pastikan tidak ada nilai <= 0
+sapply(data_final[, -ncol(data_final)], function(x) sum(x <= 0))
+```
+```{r}
+# Transformasi data (agar semua > 0)
+data_bt <- data_final
+
+data_bt[, -ncol(data_bt)] <- apply(data_bt[, -ncol(data_bt)], 2, function(x) {
+  x - min(x) + 0.001
+})
+
+# Cek ulang
+sapply(data_bt[, -ncol(data_bt)], function(x) sum(x <= 0))
+```
+```{r}
+# Bentuk variabel biner (dummy)
+data_bt$Y_bin <- ifelse(data_bt$Class == "DERMASON", 1, 0)
+
+table(data_bt$Y_bin)
+```
+```{r}
+# Model logit dengan komponen Box-Tidwell
+# (uji linearitas logit)
+model_bt <- glm(
+  Y_bin ~ AspectRatio + ShapeFactor1 + ShapeFactor4 + Extent + Solidity +
+    I(AspectRatio * log(AspectRatio)) +
+    I(ShapeFactor1 * log(ShapeFactor1)) +
+    I(ShapeFactor4 * log(ShapeFactor4)) +
+    I(Extent * log(Extent)) +
+    I(Solidity * log(Solidity)),
+  family = binomial,
+  data = data_bt
+)
+
+summary(model_bt)
+```
+Berdasarkan hasil uji linearitas logit menggunakan pendekatan Box-Tidwell, diketahui bahwa seluruh variabel independen memiliki nilai lebih dari nol sehingga memenuhi syarat untuk dilakukan transformasi logaritma. Hasil estimasi model menunjukkan bahwa beberapa komponen interaksi antara variabel dan logaritmanya signifikan secara statistik (p-value < 0.05), yaitu pada variabel AspectRatio, ShapeFactor1, ShapeFactor4, dan Solidity. Hal ini menunjukkan bahwa hubungan antara variabel-variabel tersebut dengan logit tidak bersifat linear, sehingga asumsi linearitas logit tidak terpenuhi untuk variabel tersebut. Sedangkan, variabel Extent tidak menunjukkan signifikansi pada komponen logaritmiknya (p-value > 0.05), sehingga dapat dianggap memenuhi asumsi linearitas.
+
+Dengan demikian, untuk mengatasi pelanggaran linearitas, dilakukan penyesuaian model dengan menambahkan komponen non-linear berupa suku kuadrat pada variabel yang tidak memenuhi asumsi, sehingga model akhir mampu menangkap hubungan yang lebih kompleks antara variabel independen dan probabilitas kategori.
+
+# Model akhir multinomial (dengan perbaikan non-linearitas)
+```{r}
+library(nnet)
+
+model_akhir <- multinom(
+  Class ~ AspectRatio + I(AspectRatio^2) +
+    ShapeFactor1 + I(ShapeFactor1^2) +
+    ShapeFactor4 + I(ShapeFactor4^2) +
+    Extent +
+    Solidity + I(Solidity^2),
+  data = data_final_scaled,
+  trace = FALSE
+)
+
+summary(model_akhir)
+```
+Model regresi logistik multinomial akhir dibentuk dengan memasukkan komponen non-linear berupa suku kuadrat pada variabel AspectRatio, ShapeFactor1, ShapeFactor4, dan Solidity, sebagai bentuk penyesuaian terhadap hasil uji linearitas logit sebelumnya. Variabel Extent tetap dimasukkan dalam bentuk linear karena telah memenuhi asumsi linearitas.
+
+Hasil estimasi menunjukkan bahwa setiap kategori (BOMBAY, CALI, DERMASON, HOROZ, SEKER, dan SIRA) memiliki koefisien yang berbeda terhadap kategori referensi (BARBUNYA), yang merepresentasikan perbedaan pengaruh variabel independen terhadap log-odds masing-masing kategori. Keberadaan koefisien pada suku kuadrat menunjukkan bahwa hubungan antara beberapa variabel independen dan log-odds bersifat non-linear, sehingga perubahan nilai variabel tidak selalu berdampak secara konstan terhadap peluang kategori.
+
+Secara keseluruhan, model menghasilkan nilai Residual Deviance sebesar 5712.619 dan AIC sebesar 5832.619, yang menunjukkan bahwa model memiliki kecocokan yang cukup baik terhadap data dengan kompleksitas yang masih terkontrol. Dengan demikian, model ini dinilai mampu merepresentasikan hubungan antara karakteristik bentuk biji dengan kategori jenis biji secara lebih akurat dibandingkan model linear sederhana
+
+# Uji Signifikansi Parameter
+## 1. Uji serentak Likelihood
+```{r}
+library(nnet)
+
+model_full <- multinom(
+  Class ~ AspectRatio + I(AspectRatio^2) +
+    ShapeFactor1 + I(ShapeFactor1^2) +
+    ShapeFactor4 + I(ShapeFactor4^2) +
+    Extent +
+    Solidity + I(Solidity^2),
+  data = data_final_scaled,
+  trace = FALSE
+)
+
+# model null (tanpa prediktor)
+model_null <- multinom(Class ~ 1, data = data_final_scaled, trace = FALSE)
+
+#Hitung Likelihood Ratio Test
+LL_null <- logLik(model_null)
+LL_full <- logLik(model_full)
+
+LR_stat <- -2 * (LL_null - LL_full)
+
+# Derajat bebas
+df <- attr(LL_full, "df") - attr(LL_null, "df")
+
+# p-value
+p_value <- pchisq(LR_stat, df = df, lower.tail = FALSE)
+
+LR_stat
+df
+p_value
+```
+```{r}
+LL_null <- logLik(model_null)
+LL_full <- logLik(model_full)
+
+LL_null
+LL_full
+```
+Berdasarkan hasil uji Likelihood Ratio, diperoleh nilai statistik uji sebesar 43957.76 dengan derajat bebas 54 dan p-value mendekati nol (p-value < 0.05). Hal ini menunjukkan bahwa model regresi logistik multinomial secara simultan signifikan, sehingga variabel independen secara bersama-sama berpengaruh terhadap variabel respon. Dengan demikian, model yang dibangun layak digunakan untuk analisis lebih lanjut.
+
+## 2.Uji Parsial (Wald Test)
+```{r}
+# Ambil ringkasan model
+summary_model <- summary(model_akhir)
+
+# Koefisien
+coef <- summary_model$coefficients
+
+# Standard error
+se <- summary_model$standard.errors
+
+# Statistik Wald (z)
+z_value <- coef / se
+
+# p-value (dua sisi)
+p_value <- 2 * (1 - pnorm(abs(z_value)))
+
+# Tampilkan hasil
+p_value
+```
+Berdasarkan hasil uji parsial menggunakan Wald Test, terlihat bahwa tidak semua variabel prediktor memberikan pengaruh yang signifikan pada setiap kategori kelas dry bean. Hal ini ditunjukkan oleh nilai p-value yang berbeda-beda pada masing-masing variabel dan kelas. Variabel dengan p-value kurang dari 0,05 dapat dinyatakan berpengaruh signifikan terhadap klasifikasi. Hasil pengujian menunjukkan bahwa variabel AspectRatio merupakan salah satu prediktor yang paling konsisten signifikan pada sebagian besar kelas, terutama pada kelas CALI, DERMASON, SEKER, dan SIRA dengan p-value yang sangat kecil. Hal ini menunjukkan bahwa bentuk biji, terutama tingkat kelonjongan, memiliki peran penting dalam membedakan jenis dry bean. Selain itu, ShapeFactor4 dan Solidity juga menunjukkan signifikansi yang kuat pada hampir seluruh kelas, sehingga kedua variabel ini dapat dianggap sebagai prediktor penting dalam model.
+Sebaliknya, beberapa variabel seperti Extent dan beberapa komponen kuadrat, seperti I(AspectRatio^2) atau I(ShapeFactor4^2), tidak selalu signifikan pada semua kelas. Hal ini menunjukkan bahwa pengaruh variabel tersebut cenderung bergantung pada kategori dry bean tertentu. Hasil Wald Test menunjukkan bahwa variabel bentuk dan kepadatan seperti AspectRatio, ShapeFactor4, dan Solidity merupakan variabel yang paling dominan dalam membedakan kelas, sedangkan variabel lainnya berperan lebih spesifik pada kelas tertentu.
+
+
+```{r}
+wald_table <- data.frame(
+  Koefisien = as.vector(coef),
+  Std_Error = as.vector(se),
+  Z_value = as.vector(z_value),
+  P_value = as.vector(p_value)
+)
+
+wald_table
+```
+Berdasarkan hasil uji parsial menggunakan uji Wald, diperoleh bahwa sebagian besar variabel independen memiliki pengaruh signifikan terhadap variabel respon pada taraf signifikansi 5%. Variabel AspectRatio, ShapeFactor1, dan Solidity menunjukkan tingkat signifikansi yang sangat kuat di hampir seluruh kategori, sehingga dapat dianggap sebagai faktor utama dalam membedakan jenis biji. Selain itu, keberadaan komponen kuadrat seperti I(AspectRatio²), I(ShapeFactor1²), dan I(Solidity²) yang juga signifikan mengindikasikan adanya hubungan non-linear antara variabel independen dan log-odds. Disisi lain, variabel seperti Extent dan ShapeFactor4 menunjukkan hasil yang kurang konsisten dalam hal signifikansi, sehingga kontribusinya dalam model relatif lebih kecil dibandingkan variabel lainnya.
+
+# Interpretasi Model
+## Relative Log-Odds
+```{r}
+# Koefisien model (log-odds relatif terhadap referensi)
+coef_logodds <- coef(model_akhir)
+
+coef_logodds
+```
+Interpretasi model dilakukan menggunakan nilai koefisien dalam bentuk relative log-odds, yaitu logaritma perbandingan peluang suatu kategori terhadap kategori referensi (BARBUNYA). Hasil estimasi menunjukkan bahwa variabel AspectRatio, ShapeFactor1, dan Solidity memiliki pengaruh yang kuat dalam membedakan kategori biji. AspectRatio cenderung meningkatkan peluang pada beberapa kategori seperti BOMBAY dan CALI, namun menurunkan peluang pada kategori lain seperti DERMASON, sehingga menunjukkan arah pengaruh yang berbeda antar kategori. ShapeFactor1 memiliki pengaruh yang sangat besar terutama pada kategori DERMASON dan HOROZ, yang menunjukkan peran dominan variabel ini dalam klasifikasi. Sedangkan, ShapeFactor4 cenderung memiliki koefisien negatif, yang menunjukkan kecenderungan peningkatan variabel ini mengarah pada kategori referensi. Selain itu, keberadaan komponen kuadrat pada beberapa variabel menunjukkan adanya hubungan non-linear, sehingga pengaruh variabel tidak bersifat linier sederhana terhadap log-odds.
+
+## Relative Risk Ratio (RRR)
+```{r}
+RRR <- exp(coef(model_akhir))
+RRR
+```
+Interpretasi model menggunakan Relative Risk Ratio (RRR) menunjukkan bahwa beberapa variabel memiliki pengaruh yang kuat terhadap peluang suatu kategori dibandingkan kategori referensi (BARBUNYA). Variabel AspectRatio meningkatkan peluang pada kategori seperti CALI dan BOMBAY, namun menurunkan peluang pada kategori DERMASON, sehingga menunjukkan perbedaan arah pengaruh antar kategori. Variabel ShapeFactor1 merupakan faktor yang paling dominan, dengan nilai RRR yang sangat besar pada beberapa kategori, yang menandakan pengaruh yang sangat kuat dalam proses klasifikasi. Selain itu, variabel Solidity secara konsisten meningkatkan peluang seluruh kategori dibandingkan referensi. Sebaliknya, ShapeFactor4 cenderung memiliki nilai RRR kurang dari satu, yang menunjukkan bahwa peningkatan variabel ini menurunkan peluang pada beberapa kategori. Keberadaan komponen kuadrat yang signifikan juga menunjukkan adanya hubungan non-linear, sehingga pengaruh variabel independen terhadap peluang tidak bersifat linier sederhana.
+
+## Marginal Effects
+```{r}
+#install.packages("marginaleffects")
+library(marginaleffects)
+
+mfx <- avg_slopes(model_akhir)
+
+summary(mfx)
+```
+Berdasarkan hasil marginal effects, terlihat bahwa pengaruh rata-rata variabel prediktor terhadap probabilitas klasifikasi pada masing-masing kelas bervariasi. Nilai estimate menunjukkan besar dan arah pengaruh rata-rata setiap variabel terhadap peluang suatu observasi masuk ke kelas tertentu. Nilai estimasi yang positif menunjukkan bahwa kenaikan suatu variabel meningkatkan probabilitas masuk ke kelas tertentu, sedangkan nilai negatif menunjukkan penurunan probabilitas. Hasil menunjukkan bahwa pengaruh variabel prediktor terhadap probabilitas kelas cukup beragam, dengan nilai estimasi berkisar dari -0,127 hingga 0,240. Rentang ini menunjukkan bahwa beberapa variabel memiliki pengaruh yang cukup kuat dalam meningkatkan maupun menurunkan peluang suatu observasi masuk ke kelas tertentu. Selain itu, nilai p-value yang pada banyak kasus mendekati 0 menunjukkan bahwa sebagian besar efek marginal yang dihasilkan bersifat signifikan secara statistik.
+
+Nilai standard error yang relatif kecil juga menunjukkan bahwa estimasi efek marginal cukup stabil. Hasil marginal effects memperkuat bahwa variabel-variabel dalam model memiliki kontribusi nyata terhadap perubahan probabilitas klasifikasi, sehingga model multinomial yang dibangun tidak hanya signifikan secara statistik, tetapi juga memiliki interpretasi yang lebih jelas terhadap pengaruh masing-masing prediktor pada setiap kelas.
+
+
+```{r}
+mfx <- avg_slopes(model_akhir, by = "Class")
+
+mfx
+```
+
+```{r}
+mfx_prob <- avg_slopes(model_akhir, type = "probs")
+
+mfx_prob
+```
+
+```{r}
+library(dplyr)
+
+mfx %>%
+  arrange(desc(abs(estimate))) %>%
+  head(10)
+```
+Hasil marginal effects menunjukkan bahwa variabel independen memiliki pengaruh yang berbeda-beda terhadap probabilitas masing-masing kategori. Secara umum, nilai marginal effects berkisar antara -0.127 hingga 0.240, yang menunjukkan bahwa perubahan satu unit variabel dapat meningkatkan atau menurunkan probabilitas suatu kategori hingga sekitar 24%. Sebagian besar variabel terbukti signifikan secara statistik, ditunjukkan oleh nilai p-value yang sangat kecil, sehingga berperan penting dalam membedakan antar kategori. Hal ini menegaskan bahwa pengaruh variabel tidak bersifat seragam pada seluruh kelas, melainkan bergantung pada karakteristik masing-masing kategori.
+Secara lebih spesifik, variabel ShapeFactor1 memiliki pengaruh paling dominan, terutama pada kategori DERMASON dengan nilai marginal effects positif yang besar, yang menunjukkan bahwa peningkatan ShapeFactor1 secara signifikan meningkatkan probabilitas kategori tersebut. Sebaliknya, pada kategori SIRA, variabel yang sama memiliki pengaruh negatif yang kuat, sehingga menurunkan peluang masuk ke kategori tersebut. Variabel AspectRatio juga menunjukkan pola yang berbeda antar kategori, di mana variabel ini menurunkan probabilitas pada kategori DERMASON dan SEKER, namun meningkatkan probabilitas pada kategori SIRA. Selain itu, variabel ShapeFactor4 berpengaruh positif terhadap kategori BARBUNYA, tetapi berpengaruh negatif terhadap kategori CALI. Perbedaan arah dan besarnya pengaruh ini menunjukkan adanya hubungan yang kompleks dan non-seragam antara variabel independen dan probabilitas masing-masing kategori. Secara keseluruhan, hasil ini menegaskan bahwa model regresi logistik multinomial yang digunakan mampu menangkap pola hubungan yang berbeda-beda antar variabel dalam menentukan klasifikasi kategori.
+
+# Evaluasi Model
+```{r}
+#prediksi clas
+pred_class <- predict(model_akhir, newdata = data_final_scaled, type = "class")
+
+actual_class <- data_final_scaled$Class
+
+#confusion matrix
+table(Predicted = pred_class, Actual = actual_class)
+```
+Berdasarkan hasil confusion matrix, model multinomial menunjukkan kemampuan klasifikasi yang cukup optimal dalam membedakan tujuh kelas dry bean. Sebagian besar observasi berhasil diprediksi dengan benar, yang terlihat dari dominasi nilai pada diagonal utama matriks. Hal ini menunjukkan bahwa model mampu mengenali pola masing-masing kelas dengan cukup optimal. Kelas BOMBAY menunjukkan hasil klasifikasi terbaik karena seluruh 522 observasi berhasil diprediksi dengan benar tanpa kesalahan. Kelas lain seperti CALI, HOROZ, SEKER, dan SIRA juga memiliki jumlah prediksi benar yang tinggi, masing-masing sebesar 1.522, 1.767, 1.931, dan 2.337 observasi. Sedangkan, kelas DERMASON memiliki jumlah prediksi benar terbesar secara absolut, yaitu 3.221 observasi, meskipun masih terdapat beberapa kesalahan klasifikasi terutama ke kelas SIRA.
+
+Kesalahan klasifikasi paling terlihat terjadi antara kelas-kelas yang memiliki karakteristik relatif mirip, seperti DERMASON yang cukup sering diprediksi sebagai SIRA, serta BARBUNYA yang sesekali tertukar dengan CALI. Hal ini menunjukkan bahwa beberapa kelas memiliki pola karakteristik yang saling berdekatan. Model telah menunjukkan performa klasifikasi yang baik karena mayoritas observasi berhasil diklasifikasikan ke kelas yang sesuai.
+
+
+```{r}
+#akurasi
+accuracy <- mean(pred_class == actual_class)
+accuracy
+```
+Berdasarkan hasil evaluasi model, diperoleh nilai akurasi sebesar 0,9223 atau sekitar 92,24%. Nilai ini menunjukkan bahwa model multinomial mampu mengklasifikasikan data dengan sangat baik, karena sekitar 92% observasi berhasil diprediksi ke dalam kelas yang sesuai. Tingkat akurasi ini menunjukkan bahwa model memiliki performa klasifikasi yang tinggi dalam membedakan tujuh jenis dry bean berdasarkan variabel prediktor yang digunakan. Dengan akurasi di atas 90%, model dapat dikatakan cukup optimal dalam mengenali pola antar kelas dan layak digunakan sebagai model klasifikasi pada dataset ini.
+
+
+```{r}
+#evaluasi lengkap
+#install.packages("caret")
+library(caret)
+
+conf_mat <- confusionMatrix(pred_class, actual_class)
+conf_mat
+```
+Berdasarkan hasil evaluasi lengkap menggunakan confusion matrix, model multinomial menunjukkan performa klasifikasi yang sangat baik. Nilai akurasi sebesar 92,24% menunjukkan bahwa model mampu mengklasifikasikan sebagian besar observasi dengan tepat. Selain itu, interval kepercayaan 95% sebesar 91,78% hingga 92,68% menunjukkan bahwa tingkat akurasi model cukup stabil. Nilai p-value yang sangat kecil (< 2.2e-16) juga menunjukkan bahwa akurasi model secara signifikan lebih baik dibanding klasifikasi acak.
+
+Nilai Kappa sebesar 0,9061 menunjukkan tingkat kesesuaian klasifikasi yang sangat kuat antara hasil prediksi dan data aktual. Hal ini menunjukkan bahwa performa model tidak hanya tinggi secara akurasi, tetapi juga memiliki konsistensi klasifikasi yang sangat baik setelah mempertimbangkan kemungkinan prediksi benar secara acak. Berdasarkan evaluasi per kelas, model menunjukkan performa yang sangat baik pada hampir seluruh kategori. Kelas BOMBAY memiliki performa terbaik dengan nilai sensitivitas, spesifisitas, dan balanced accuracy sempurna sebesar 1,000. Kelas lain seperti CALI, HOROZ, dan SEKER juga menunjukkan performa sangat tinggi dengan nilai balanced accuracy di atas 0,96. Disisi lain, kelas SIRA memiliki performa relatif paling rendah dibanding kelas lain, terutama pada nilai positive predictive value sebesar 0,852, yang menunjukkan bahwa kelas ini masih memiliki kesalahan prediksi yang lebih tinggi dibanding kategori lainnya.
+
+Hasil evaluasi menunjukkan bahwa model multinomial memiliki kemampuan klasifikasi yang sangat baik dan stabil dalam membedakan tujuh jenis dry bean. Meskipun masih terdapat sedikit kesalahan pada kelas tertentu seperti SIRA, performa model secara umum sudah sangat kuat dan layak digunakan sebagai model klasifikasi.
+
+
+```{r}
+#Pseudo R²
+#install.packages("pscl")
+library(pscl)
+```
+```{r}
+pR2(model_akhir)
+```
+Berdasarkan hasil Pseudo R-Square, model multinomial menunjukkan kecocokan yang sangat baik terhadap data. Nilai McFadden sebesar 0,885 menunjukkan bahwa model memiliki kemampuan yang sangat kuat dalam menjelaskan variasi data dibandingkan model tanpa prediktor (null model). Nilai ini menunjukkan bahwa variabel-variabel yang digunakan dalam model memberikan kontribusi besar dalam membedakan kelas dry bean. Selain itu, nilai r2ML sebesar 0,961 dan r2CU sebesar 0,986 juga menunjukkan bahwa model memiliki daya jelaskan yang sangat tinggi. Nilai tersebut menandakan bahwa sebagian besar variasi dalam data dapat dijelaskan oleh variabel prediktor yang digunakan pada model. Hasil Pseudo R-Square menunjukkan bahwa model multinomial memiliki kecocokan yang sangat baik dan mampu merepresentasikan hubungan antara variabel prediktor dengan kelas dry bean secara sangat kuat.
+
+
+#KESIMPULAN
+
+Berdasarkan hasil analisis, metode regresi logistik multinomial terbukti mampu mengklasifikasikan tujuh jenis dry bean dengan sangat baik berdasarkan karakteristik bentuk biji. Dari 16 variabel awal, proses seleksi variabel berhasil menyederhanakan model menjadi lima prediktor utama, yaitu AspectRatio, ShapeFactor1, ShapeFactor4, Extent, dan Solidity, yang dinilai paling representatif dalam membedakan jenis biji sekaligus mampu mengurangi masalah multikolinearitas. Setelah dilakukan standarisasi, pengujian asumsi, dan penyesuaian non-linear melalui penambahan suku kuadrat, model akhir menunjukkan hasil yang lebih stabil, lebih parsimonious, dan lebih baik dalam merepresentasikan pola data.
+
+Hasil pengujian menunjukkan bahwa model multinomial yang dibentuk signifikan secara simultan, ditunjukkan oleh uji Likelihood Ratio dengan p-value < 0,05. Secara parsial, variabel AspectRatio, ShapeFactor1, dan Solidity menjadi prediktor yang paling dominan dalam membedakan kelas dry bean, sedangkan ShapeFactor4 dan Extent memberikan kontribusi tambahan yang lebih spesifik pada kategori tertentu. Hasil marginal effects juga menunjukkan bahwa pengaruh masing-masing variabel terhadap probabilitas klasifikasi berbeda pada setiap kelas, sehingga hubungan antara bentuk biji dan jenis dry bean bersifat kompleks dan tidak seragam.
+
+Evaluasi model menunjukkan bahwa model memiliki performa klasifikasi yang sangat baik. Nilai akurasi sebesar 92,24% menunjukkan bahwa sebagian besar observasi berhasil diklasifikasikan dengan benar, dengan nilai Kappa sebesar 0,9061 yang merepresentasikan tingkat kesesuaian klasifikasi yang sangat kuat. Selain itu, nilai Pseudo R² yang tinggi (McFadden = 0,885) menunjukkan bahwa model memiliki kecocokan yang sangat baik terhadap data dan mampu menjelaskan variasi kelas secara kuat. Secara keseluruhan, model regresi logistik multinomial yang dibangun terbukti efektif, stabil, dan layak digunakan untuk klasifikasi jenis dry bean berdasarkan karakteristik geometris biji.
+
+
+#DAFTAR PUSTAKA
+
+[1] M. Koklu and I. A. Ozkan, “Multiclass classification of dry beans using computer vision and machine learning techniques,” Computers and Electronics in Agriculture, vol. 174, p. 105507, Jul. 2020, doi: 10.1016/j.compag.2020.105507. 
+
+[2] A. S. R. P. Wardhani, “Perbandingan analisis diskriminan dan regresi logistik multinomial pada klasifikasi penderita hipertensi,” Jurnal Ilmiah KOMPUTASI dan Informatika (IKOMTI), vol. 2, no. 1, 2024.
+
+[3] G. K. G. M. Dissanayake, “Multinomial logistic regression for data analysis,” SAGE Research Methods Cases, 2016, doi: 10.1177/2059799116672874.
+
+[4] A. S. Fouladi, N. R. N. Khameneh, and M. R. Mahmoudi, “Multinomial logistic regression and discriminant function analysis in medical research: a comparison study,” Journal of Applied Statistics, vol. 45, no. 3, pp. 461–474, 2018, doi: 10.1080/02664763.2017.1282441.
+
+[5] S. Menard, “Applied logistic regression analysis,” SAGE Research Methods Foundations, 2016, doi: 10.1177/1471082X16642560.
+
+[6] C. Molnar, “Interpretable machine learning,” arXiv preprint arXiv:1604.04706, 2016.
+
+[7] M. F. M. Arif, M. R. Hossain, and S. Akter, “A review of multinomial logistic regression in classification problems,” Results in Engineering, vol. 20, p. 101565, 2023.
+
+[8] Y. Zhang, L. Chen, and X. Wang, “Comparative analysis of discriminant analysis and multinomial logistic regression for multiclass classification,” Scientific Reports, vol. 15, Art. no. 604, 2025.
+
+[9] H. Demir, E. Ceyhan, and M. Koklu, “Classification of dry bean genotypes using morphological traits and machine learning approaches,” Euphytica, vol. 222, Art. no. 87, 2026.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
